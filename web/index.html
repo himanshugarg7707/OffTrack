@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OffTrack | Campus Emergency Route Navigation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header Landmark -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">OffTrack <span class="brand-badge">Emergency Route Navigation</span></h1>
+          <p class="brand-subtitle">Chitkara University Campus Network System</p>
+        </div>
+      </div>
+
+      <!-- Live Connection Pill -->
+      <div class="header-status">
+        <div id="backend-status-badge" class="status-pill status-checking" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="backend-status-text">Checking backend...</span>
+        </div>
+        <button type="button" id="refresh-data-btn" class="btn-icon" title="Refresh live data" aria-label="Refresh data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar" aria-label="Main Navigation">
+      <ul class="nav-list" role="tablist">
+        <li role="presentation"><button type="button" role="tab" aria-selected="true" aria-controls="panel-map" id="tab-map" class="nav-btn active">Interactive Map</button></li>
+        <li role="presentation"><button type="button" role="tab" aria-selected="false" aria-controls="panel-route" id="tab-route" class="nav-btn">Route Finder (BFS/DFS)</button></li>
+        <li role="presentation"><button type="button" role="tab" aria-selected="false" aria-controls="panel-dispatch" id="tab-dispatch" class="nav-btn">Ambulance Dispatch 🚨</button></li>
+        <li role="presentation"><button type="button" role="tab" aria-selected="false" aria-controls="panel-roads" id="tab-roads" class="nav-btn">Road Closures</button></li>
+        <li role="presentation"><button type="button" role="tab" aria-selected="false" aria-controls="panel-analytics" id="tab-analytics" class="nav-btn">Campus Analytics</button></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- Main Landmark -->
+  <main class="main-content">
+    
+    <!-- Top KPI Metric Strip -->
+    <section class="kpi-strip" aria-label="Campus Metrics">
+      <div class="kpi-card">
+        <div class="kpi-icon icon-nodes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"></path>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Campus Locations</span>
+          <span id="kpi-locations" class="kpi-val">6</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-icon icon-roads">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 19L19 4M8 21l13-13M2 16l14-14"></path>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Active Roads</span>
+          <span id="kpi-roads" class="kpi-val">8</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-icon icon-closures">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Road Closures</span>
+          <span id="kpi-closures" class="kpi-val">0</span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-icon icon-dispatches">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="1" y="3" width="15" height="13"></rect>
+            <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+            <circle cx="5.5" cy="18.5" r="2.5"></circle>
+            <circle cx="18.5" cy="18.5" r="2.5"></circle>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Dispatched Units</span>
+          <span id="kpi-dispatches" class="kpi-val">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Master Layout: Map Canvas + Interactive Panel -->
+    <div class="dashboard-grid">
+      
+      <!-- Interactive SVG Campus Map -->
+      <section class="map-section" aria-labelledby="map-heading">
+        <div class="map-card">
+          <div class="map-header">
+            <div>
+              <h2 id="map-heading" class="section-title">Live Campus Visual Network</h2>
+              <p class="section-desc">Click any location node to select route, or click road tags (R1-R8) to toggle obstacles</p>
+            </div>
+            <div class="map-controls">
+              <span class="map-legend"><span class="legend-dot normal"></span> Open Road</span>
+              <span class="map-legend"><span class="legend-dot blocked"></span> Blocked (🚧)</span>
+              <span class="map-legend"><span class="legend-dot active-route"></span> Active Path</span>
+              <button type="button" id="reset-route-btn" class="btn-sm btn-ghost">Clear Route</button>
+            </div>
+          </div>
+
+          <!-- SVG Visual Viewport -->
+          <div class="map-canvas-container" id="canvas-container">
+            <svg id="campus-svg" viewBox="0 0 960 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Interactive graphical campus map">
+              <defs>
+                <!-- Glowing Filter for Active Paths -->
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+                <filter id="glow-strong" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="8" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+
+                <!-- Gradients -->
+                <linearGradient id="activeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#06b6d4" />
+                  <stop offset="100%" stop-color="#3b82f6" />
+                </linearGradient>
+
+                <linearGradient id="emergencyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ef4444" />
+                  <stop offset="100%" stop-color="#f97316" />
+                </linearGradient>
+              </defs>
+
+              <!-- Map Background Grid -->
+              <rect width="100%" height="100%" fill="#0b1120" rx="16" />
+              <g class="grid-lines" opacity="0.12"></g>
+
+              <!-- Roads / Edges Group -->
+              <g id="roads-layer"></g>
+
+              <!-- Active Highlight Path Layer -->
+              <g id="active-path-layer"></g>
+
+              <!-- Nodes / Vertices Group -->
+              <g id="nodes-layer"></g>
+
+              <!-- Animated Ambulance Layer -->
+              <g id="vehicle-layer" style="display: none;">
+                <circle id="vehicle-halo" r="22" fill="rgba(239, 68, 68, 0.3)" />
+                <circle id="vehicle-core" r="14" fill="#ef4444" stroke="#ffffff" stroke-width="2.5" />
+                <text id="vehicle-icon" y="5" text-anchor="middle" font-size="14">🚑</text>
+              </g>
+            </svg>
+
+            <!-- Floating Route Banner Overlay -->
+            <div id="route-banner" class="route-banner hidden" role="region" aria-live="polite">
+              <div class="route-banner-content">
+                <span class="banner-badge" id="banner-algo-badge">BFS Shortest Route</span>
+                <span class="banner-path" id="banner-path-text">A ➔ B ➔ D ➔ F</span>
+                <span class="banner-meta" id="banner-meta-text">3 Segments • 6 min ETA</span>
+              </div>
+              <button type="button" id="animate-ambulance-btn" class="btn-sm btn-primary">Simulate Vehicle 🚑</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Control Sidebar / Tab Panels -->
+      <section class="controls-section">
+        
+        <!-- Tab 1: Route Finder Panel -->
+        <article id="panel-route" class="tab-panel active" role="tabpanel" aria-labelledby="tab-route">
+          <div class="panel-card">
+            <h2 class="panel-title">Pathfinding Engine</h2>
+            <p class="panel-desc">Find optimal campus routes bypassing any road closures</p>
+
+            <form id="route-form" class="app-form">
+              <div class="form-group">
+                <label for="route-from">Start Location</label>
+                <select id="route-from" class="form-select" required>
+                  <option value="">Select Origin...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="route-to">Destination</label>
+                <select id="route-to" class="form-select" required>
+                  <option value="">Select Destination...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Traversal Algorithm</label>
+                <div class="radio-pill-group" role="radiogroup">
+                  <label class="radio-pill">
+                    <input type="radio" name="algorithm" value="bfs" checked>
+                    <span><strong>BFS</strong> (Fewest Segments)</span>
+                  </label>
+                  <label class="radio-pill">
+                    <input type="radio" name="algorithm" value="dfs">
+                    <span><strong>DFS</strong> (Alternate Route)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-block">Find Route</button>
+              </div>
+            </form>
+
+            <!-- Output Box -->
+            <div id="route-result-box" class="result-box hidden">
+              <div class="result-header">
+                <h3 class="result-title">Route Calculation Result</h3>
+                <span id="res-badge" class="badge badge-success">Found</span>
+              </div>
+              <div class="result-body">
+                <div class="path-display" id="res-path-sequence">A ➔ B ➔ D ➔ F</div>
+                <div class="metrics-grid">
+                  <div class="metric-item">
+                    <span class="metric-key">Road Segments</span>
+                    <span class="metric-val" id="res-segments">3</span>
+                  </div>
+                  <div class="metric-item">
+                    <span class="metric-key">Est. Travel Time</span>
+                    <span class="metric-val" id="res-eta">6 min</span>
+                  </div>
+                  <div class="metric-item">
+                    <span class="metric-key">Algorithm</span>
+                    <span class="metric-val" id="res-algo">Breadth-First</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tab 2: Ambulance Emergency Dispatch Panel -->
+        <article id="panel-dispatch" class="tab-panel" role="tabpanel" aria-labelledby="tab-dispatch">
+          <div class="panel-card emergency-card">
+            <div class="card-tag">Emergency Command</div>
+            <h2 class="panel-title">Dispatch Ambulance</h2>
+            <p class="panel-desc">Quickly route emergency vehicles from incident site to Campus Medical Centre (F)</p>
+
+            <form id="dispatch-form" class="app-form">
+              <div class="form-group">
+                <label for="dispatch-location">Incident Location</label>
+                <select id="dispatch-location" class="form-select" required>
+                  <option value="">Select Incident Point...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="dispatch-desc">Incident Description</label>
+                <input type="text" id="dispatch-desc" class="form-input" placeholder="e.g. Student injured in sports complex" required>
+              </div>
+
+              <div class="form-group">
+                <label>Emergency Priority</label>
+                <div class="radio-pill-group">
+                  <label class="radio-pill prio-critical">
+                    <input type="radio" name="priority" value="CRITICAL" checked>
+                    <span>🚨 Critical</span>
+                  </label>
+                  <label class="radio-pill prio-high">
+                    <input type="radio" name="priority" value="HIGH">
+                    <span>⚠️ High</span>
+                  </label>
+                  <label class="radio-pill prio-normal">
+                    <input type="radio" name="priority" value="NORMAL">
+                    <span>ℹ️ Normal</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-emergency btn-block">🚨 Dispatch Emergency Unit</button>
+              </div>
+            </form>
+
+            <!-- Latest Dispatch Receipt Box -->
+            <div id="dispatch-receipt-box" class="result-box receipt-box hidden">
+              <div class="receipt-header">
+                <div class="receipt-id" id="receipt-id">DSP-001</div>
+                <div class="receipt-status badge badge-danger">DISPATCHED</div>
+              </div>
+              <div class="receipt-details">
+                <p><strong>Vehicle:</strong> <span id="receipt-vehicle">Ambulance AMB-01</span></p>
+                <p><strong>Destination:</strong> Campus Medical Centre (F)</p>
+                <p><strong>Incident:</strong> <span id="receipt-incident">Student Injury</span></p>
+                <p><strong>BFS Route:</strong> <span id="receipt-route" class="font-mono">A ➔ B ➔ D ➔ F</span></p>
+                <p><strong>Estimated Arrival:</strong> <span id="receipt-eta" class="text-cyan font-bold">6 minutes</span></p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tab 3: Road Closures & Obstacles Panel -->
+        <article id="panel-roads" class="tab-panel" role="tabpanel" aria-labelledby="tab-roads">
+          <div class="panel-card">
+            <h2 class="panel-title">Road Infrastructure Control</h2>
+            <p class="panel-desc">Block roads due to construction/obstruction, or reopen active lanes</p>
+
+            <div class="table-wrapper" tabindex="0" role="region" aria-label="Road Status Directory">
+              <table class="data-table" id="roads-table">
+                <caption class="sr-only">Campus roads and their current operational status</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Road ID</th>
+                    <th scope="col">Segment</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="roads-tbody">
+                  <!-- Populated dynamically via JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <div class="active-closures-section">
+              <h3 class="sub-title">Active Closure Log</h3>
+              <ul class="closure-list" id="closure-list">
+                <li class="empty-state">No road closures currently reported. All lanes clear.</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tab 4: Campus Analytics & Directory -->
+        <article id="panel-analytics" class="tab-panel" role="tabpanel" aria-labelledby="tab-analytics">
+          <div class="panel-card">
+            <h2 class="panel-title">Campus Location Directory</h2>
+            <p class="panel-desc">All registered checkpoints and facilities in the Chitkara University graph</p>
+
+            <!-- Search Field -->
+            <search class="search-box">
+              <label for="loc-search" class="sr-only">Search locations</label>
+              <input type="search" id="loc-search" class="form-input" placeholder="Search by ID or name...">
+            </search>
+
+            <div class="table-wrapper" tabindex="0" role="region" aria-label="Campus Locations Table">
+              <table class="data-table" id="locations-table">
+                <caption class="sr-only">Locations on campus</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">Facility Name</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Connections</th>
+                  </tr>
+                </thead>
+                <tbody id="locations-tbody">
+                  <!-- Populated dynamically via JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Incident History Log -->
+            <div class="history-section">
+              <h3 class="sub-title">Dispatch History Log</h3>
+              <div class="table-wrapper" tabindex="0" role="region" aria-label="Dispatch History Table">
+                <table class="data-table" id="history-table">
+                  <caption class="sr-only">History of all dispatched ambulances</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Dispatch ID</th>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Origin</th>
+                      <th scope="col">Details</th>
+                      <th scope="col">ETA</th>
+                    </tr>
+                  </thead>
+                  <tbody id="history-tbody">
+                    <tr class="empty-row"><td colspan="5">No dispatches recorded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </article>
+
+      </section>
+    </div>
+  </main>
+
+  <!-- Road Closure Modal Dialog (Using standard <dialog>) -->
+  <dialog id="road-modal" class="app-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h3 id="dialog-title" class="dialog-title">Report Road Block / Closure</h3>
+        <button type="button" class="dialog-close" id="dialog-close-btn" aria-label="Close dialog">&times;</button>
+      </div>
+      <form id="road-close-form" method="dialog" class="app-form">
+        <p class="dialog-prompt">Close road <strong id="modal-road-id">R1</strong> (<span id="modal-road-endpoints">A &lt;-&gt; B</span>):</p>
+        <div class="form-group">
+          <label for="modal-road-reason">Reason for Closure</label>
+          <input type="text" id="modal-road-reason" class="form-input" placeholder="e.g. Waterlogging, Construction, Accident" required>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" id="modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-danger">Confirm Closure</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Footer Landmark -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p>OffTrack &copy; 2026 Chitkara University &bull; Graph Algorithm Navigation & Emergency Dispatch System</p>
+      <div class="footer-meta">
+        <span>Backend: <code>Java com.sun.net.httpserver</code></span>
+        <span>Algorithms: <code>BFS &amp; DFS Graph Search</code></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
