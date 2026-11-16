@@ -10,10 +10,11 @@ class OffTrackApp {
     private final ConsoleMenu menu = new ConsoleMenu();
     private final Scanner scanner = new Scanner(System.in);
     private final NavigationService navigation = MapLoader.loadSampleMap();
+    private final DispatchService dispatch = new DispatchService(navigation);
 
     void start() {
         System.out.println("=== OFFTRACK: Emergency Route Navigation ===");
-        System.out.println("Terminal demo. Routes use number of road segments (distance data can be added later).\n");
+        System.out.println("Campus emergency navigation demo. Travel times are illustrative.\n");
         boolean running = true;
         while (running) {
             menu.show();
@@ -24,6 +25,9 @@ class OffTrackApp {
                 case "3": findRoute(true); break;
                 case "4": addObstacle(); break;
                 case "5": navigation.printObstacles(); break;
+                case "6": reopenRoad(); break;
+                case "7": navigation.printMapSummary(); break;
+                case "8": dispatchEmergency(); break;
                 case "0": running = false; break;
                 default: System.out.println("Please select a listed option.");
             }
@@ -45,11 +49,26 @@ class OffTrackApp {
         boolean added = navigation.reportObstacle(scanner.nextLine().trim());
         System.out.println(added ? "Road marked blocked." : "Unknown road ID.");
     }
+
+    private void reopenRoad() {
+        navigation.printObstacles();
+        System.out.print("Road ID to reopen: ");
+        System.out.println(navigation.clearObstacle(scanner.nextLine().trim())
+                ? "Road reopened." : "That road is not currently blocked.");
+    }
+
+    private void dispatchEmergency() {
+        navigation.printLocations();
+        System.out.print("Incident location ID: "); String origin = scanner.nextLine().trim();
+        System.out.print("Short incident description: "); String details = scanner.nextLine().trim();
+        DispatchReceipt receipt = dispatch.sendAmbulance(origin, details);
+        receipt.print();
+    }
 }
 
 class ConsoleMenu {
     void show() {
-        System.out.println("\n1. Show locations\n2. Find shortest route (BFS)\n3. Find a route (DFS)\n4. Report blocked road\n5. Show blocked roads\n0. Exit");
+        System.out.println("\n1. Show locations\n2. Find shortest route (BFS)\n3. Find a route (DFS)\n4. Report blocked road\n5. Show blocked roads\n6. Reopen a road\n7. Show map summary\n8. Dispatch ambulance to medical centre\n0. Exit");
         System.out.print("Choice: ");
     }
 }
@@ -74,6 +93,15 @@ class NavigationService {
         return true;
     }
     void printObstacles() { obstacles.print(); }
+    boolean clearObstacle(String roadId) {
+        Road road = map.getRoad(roadId);
+        if (road == null || !road.isBlocked()) return false;
+        obstacles.clear(road);
+        return true;
+    }
+    void printMapSummary() { new MapSummary(map).print(); }
+    Location location(String id) { return map.getLocation(id); }
+    String medicalCentreId() { return "F"; }
 }
 
 class CityMap {
@@ -89,6 +117,10 @@ class CityMap {
     List<Road> roadsFrom(String id) { return graph.roadsFrom(id); }
     void printLocations() { locations.print(); }
     void printRoads() { roads.print(); }
+    int locationCount() { return locations.size(); }
+    int roadCount() { return roads.size(); }
+    int blockedRoadCount() { return roads.blockedCount(); }
+    Collection<Location> allLocations() { return locations.all(); }
 }
 
 
@@ -191,6 +223,10 @@ class ObstacleManager {
         road.setBlocked(true);
         obstacles.add(new Obstacle(road));
     }
+    void clear(Road road) {
+        road.setBlocked(false);
+        obstacles.removeIf(obstacle -> obstacle.roadId().equals(road.getId()));
+    }
     void print() {
         if (obstacles.isEmpty()) { System.out.println("No blocked roads reported."); return; }
         for (Obstacle obstacle : obstacles) System.out.println(obstacle);
@@ -199,6 +235,7 @@ class ObstacleManager {
 class Obstacle {
     private final Road road;
     Obstacle(Road road) { this.road = road; }
+    String roadId() { return road.getId(); }
     @Override public String toString() { return "Blocked road: " + road; }
 }
 
@@ -237,12 +274,16 @@ class LocationRepository {
     void add(Location item) { items.put(item.getId(), item); }
     Location find(String id) { return items.get(id); }
     void print() { for (Location item : items.values()) System.out.println(item); }
+    int size() { return items.size(); }
+    Collection<Location> all() { return items.values(); }
 }
 class RoadRepository {
     private final Map<String, Road> items = new LinkedHashMap<>();
     void add(Road item) { items.put(item.getId(), item); }
     Road find(String id) { return items.get(id); }
     void print() { for (Road item : items.values()) System.out.println(item); }
+    int size() { return items.size(); }
+    int blockedCount() { int count = 0; for (Road road : items.values()) if (road.isBlocked()) count++; return count; }
 }
 
 // Small utility types keep the demo organized into beginner-friendly OOP classes.
@@ -257,3 +298,173 @@ class SearchStatus { private boolean found; void markFound() { found = true; } b
 class EmergencyDispatch { private final Ambulance ambulance = new Ambulance(); String vehicleName() { return ambulance.getType(); } }
 class NavigationConfig { private final String mapName = "Chitkara University sample map"; String getMapName() { return mapName; } }
 class RoadConnection { private final Road road; RoadConnection(Road road) { this.road = road; } Road getRoad() { return road; } }
+
+// Emergency dispatch feature: find a route from an incident to the medical centre.
+class DispatchService {
+    private final NavigationService navigation;
+    private final DispatchHistory history = new DispatchHistory();
+    private final DispatchIdGenerator ids = new DispatchIdGenerator();
+    private final ETAEstimator eta = new ETAEstimator();
+    DispatchService(NavigationService navigation) { this.navigation = navigation; }
+    DispatchReceipt sendAmbulance(String originId, String description) {
+        Location origin = navigation.location(originId);
+        if (origin == null) return DispatchReceipt.failed("Unknown incident location ID.");
+        Incident incident = new Incident(origin, description);
+        Route route = navigation.findRoute(originId, navigation.medicalCentreId(), false);
+        if (!route.isFound()) return DispatchReceipt.failed("No open route to the medical centre. Check road closures.");
+        DispatchRecord record = new DispatchRecord(ids.next(), incident, new Ambulance(), route, eta.estimate(route));
+        history.add(record);
+        return new DispatchReceipt(record, "Ambulance dispatched.");
+    }
+}
+
+class Incident {
+    private final Location location;
+    private final String description;
+    Incident(Location location, String description) {
+        this.location = location;
+        this.description = description.isEmpty() ? "Emergency assistance requested" : description;
+    }
+    Location location() { return location; }
+    String description() { return description; }
+}
+
+class DispatchRecord {
+    private final String id;
+    private final Incident incident;
+    private final EmergencyVehicle vehicle;
+    private final Route route;
+    private final TravelTime eta;
+    private final DispatchStatus status = DispatchStatus.DISPATCHED;
+    DispatchRecord(String id, Incident incident, EmergencyVehicle vehicle, Route route, TravelTime eta) {
+        this.id = id; this.incident = incident; this.vehicle = vehicle; this.route = route; this.eta = eta;
+    }
+    String id() { return id; }
+    Incident incident() { return incident; }
+    EmergencyVehicle vehicle() { return vehicle; }
+    Route route() { return route; }
+    TravelTime eta() { return eta; }
+    DispatchStatus status() { return status; }
+}
+
+class DispatchHistory {
+    private final List<DispatchRecord> records = new ArrayList<>();
+    void add(DispatchRecord record) { records.add(record); }
+    int count() { return records.size(); }
+}
+
+enum DispatchStatus { DISPATCHED }
+enum PriorityLevel { EMERGENCY }
+
+class ETAEstimator {
+    private static final int MINUTES_PER_SEGMENT = 2;
+    TravelTime estimate(Route route) { return new TravelTime(new RouteLength().of(route) * MINUTES_PER_SEGMENT); }
+}
+
+class TravelTime {
+    private final int minutes;
+    TravelTime(int minutes) { this.minutes = minutes; }
+    int minutes() { return minutes; }
+    @Override public String toString() { return minutes + " minute(s) (illustrative estimate)"; }
+}
+
+class MapSummary {
+    private final CityMap map;
+    MapSummary(CityMap map) { this.map = map; }
+    void print() {
+        MapStatistics stats = new MapStatistics(map.locationCount(), map.roadCount(), map.blockedRoadCount());
+        System.out.println("\nMap: " + new NavigationConfig().getMapName());
+        System.out.println("Locations: " + stats.locations() + " | Roads: " + stats.roads() + " | Blocked: " + stats.blockedRoads());
+        System.out.println("Medical destination: " + new CampusHospital().name());
+        for (Location location : map.allLocations()) System.out.println(" - " + new LocationNameFormatter().format(location));
+    }
+}
+
+class MapStatistics {
+    private final int locations, roads, blockedRoads;
+    MapStatistics(int locations, int roads, int blockedRoads) {
+        this.locations = locations; this.roads = roads; this.blockedRoads = blockedRoads;
+    }
+    int locations() { return locations; }
+    int roads() { return roads; }
+    int blockedRoads() { return blockedRoads; }
+}
+
+class ClosureService {
+    boolean close(Road road) { if (road.isBlocked()) return false; road.setBlocked(true); return true; }
+    boolean reopen(Road road) { if (!road.isBlocked()) return false; road.setBlocked(false); return true; }
+}
+
+class RoadStatus {
+    private final Road road;
+    RoadStatus(Road road) { this.road = road; }
+    boolean isOpen() { return !road.isBlocked(); }
+}
+
+class RoadUpdate {
+    private final Road road;
+    private final boolean blocked;
+    RoadUpdate(Road road, boolean blocked) { this.road = road; this.blocked = blocked; }
+    String message() { return road.getId() + (blocked ? " closed" : " reopened"); }
+}
+
+class RoadUpdateHistory {
+    private final List<RoadUpdate> updates = new ArrayList<>();
+    void add(RoadUpdate update) { updates.add(update); }
+    int size() { return updates.size(); }
+}
+
+class CampusHospital {
+    String id() { return "F"; }
+    String name() { return "Campus Medical Centre"; }
+}
+
+class DispatchIdGenerator {
+    private int next = 1;
+    String next() { return "DSP-" + next++; }
+}
+
+class DispatchReceipt {
+    private final DispatchRecord record;
+    private final String message;
+    DispatchReceipt(DispatchRecord record, String message) { this.record = record; this.message = message; }
+    static DispatchReceipt failed(String message) { return new DispatchReceipt(null, message); }
+    void print() {
+        System.out.println("\n" + message);
+        if (record == null) return;
+        System.out.println("Dispatch ID: " + record.id() + " | Status: " + record.status());
+        System.out.println("Vehicle: " + record.vehicle().getType() + " | Priority: " + PriorityLevel.EMERGENCY);
+        System.out.println("Incident: " + record.incident().description() + " at " + record.incident().location());
+        RoutePrinter.print(record.route(), "Route to medical centre");
+        System.out.println("Estimated arrival: " + record.eta());
+    }
+}
+
+class LocationNameFormatter {
+    String format(Location location) { return location.getId() + " - " + location.getName(); }
+}
+
+class TrafficLevel {
+    private final int minutesPerSegment;
+    TrafficLevel(int minutesPerSegment) { this.minutesPerSegment = Math.max(1, minutesPerSegment); }
+    int minutesPerSegment() { return minutesPerSegment; }
+}
+
+class RouteLeg {
+    private final String from, to;
+    RouteLeg(String from, String to) { this.from = from; this.to = to; }
+    String description() { return from + " to " + to; }
+}
+
+class RouteLegBuilder {
+    List<RouteLeg> build(Route route) {
+        List<RouteLeg> legs = new ArrayList<>();
+        List<String> ids = route.getLocationIds();
+        for (int i = 0; i + 1 < ids.size(); i++) legs.add(new RouteLeg(ids.get(i), ids.get(i + 1)));
+        return legs;
+    }
+}
+
+class IncidentValidator {
+    boolean isValid(String description) { return description != null && !description.trim().isEmpty(); }
+}
