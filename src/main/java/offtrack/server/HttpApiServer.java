@@ -130,12 +130,12 @@ public final class HttpApiServer {
 
             // Visual layout coordinates for campus visualization
             Map<String, int[]> coords = new HashMap<>();
-            coords.put("A", new int[]{160, 420}); // Main Gate (Bottom-left)
-            coords.put("B", new int[]{220, 210}); // Hostel Road (Top-left)
-            coords.put("C", new int[]{460, 430}); // Academic Block (Bottom-center)
-            coords.put("D", new int[]{520, 200}); // Library (Top-center)
-            coords.put("E", new int[]{780, 420}); // Sports Complex (Bottom-right)
-            coords.put("F", new int[]{800, 190}); // Campus Medical Centre (Top-right)
+            coords.put("A", new int[]{140, 440}); // Main Gate (South-West)
+            coords.put("B", new int[]{240, 190}); // Hostel Road (North-West)
+            coords.put("C", new int[]{480, 440}); // Academic Block (South-Center)
+            coords.put("D", new int[]{520, 190}); // Library (North-Center)
+            coords.put("E", new int[]{820, 440}); // Sports Complex (South-East)
+            coords.put("F", new int[]{830, 180}); // Campus Medical Centre (North-East)
 
             for (Location loc : map.getLocations()) {
                 Map<String, Object> item = new LinkedHashMap<>();

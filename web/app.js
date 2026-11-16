@@ -1,22 +1,22 @@
 /**
- * OffTrack - Frontend Application Controller
- * Connects with Java Backend (HttpApiServer) with automatic fallback simulation.
+ * OffTrack - Enterprise Emergency Navigation & Dispatch Controller
+ * Modern Cockpit Dashboard with Live Java REST API Sync & Full Offline Engine
  */
 
 (function () {
   'use strict';
 
-  // Fallback Campus Map Data (matches MapLoader.java)
-  const FALLBACK_LOCATIONS = [
-    { id: 'A', name: 'Main Gate', type: 'GATE', isMedicalCentre: false, x: 160, y: 420 },
-    { id: 'B', name: 'Hostel Road', type: 'HOSTEL', isMedicalCentre: false, x: 220, y: 210 },
-    { id: 'C', name: 'Academic Block', type: 'BUILDING', isMedicalCentre: false, x: 460, y: 430 },
-    { id: 'D', name: 'Library', type: 'BUILDING', isMedicalCentre: false, x: 520, y: 200 },
-    { id: 'E', name: 'Sports Complex', type: 'FACILITY', isMedicalCentre: false, x: 780, y: 420 },
-    { id: 'F', name: 'Campus Medical Centre', type: 'MEDICAL_CENTRE', isMedicalCentre: true, x: 800, y: 190 }
+  // 1. Campus Geography & Blueprint Coordinates (1000x600 canvas)
+  const CAMPUS_LOCATIONS = [
+    { id: 'A', name: 'Main Gate', type: 'GATE', isMedicalCentre: false, x: 140, y: 440 },
+    { id: 'B', name: 'Hostel Road', type: 'HOSTEL', isMedicalCentre: false, x: 240, y: 190 },
+    { id: 'C', name: 'Academic Block', type: 'BUILDING', isMedicalCentre: false, x: 480, y: 440 },
+    { id: 'D', name: 'Library', type: 'BUILDING', isMedicalCentre: false, x: 520, y: 190 },
+    { id: 'E', name: 'Sports Complex', type: 'FACILITY', isMedicalCentre: false, x: 820, y: 440 },
+    { id: 'F', name: 'Campus Medical Centre', type: 'MEDICAL_CENTRE', isMedicalCentre: true, x: 830, y: 180 }
   ];
 
-  const FALLBACK_ROADS = [
+  const CAMPUS_ROADS = [
     { id: 'R1', from: 'A', to: 'B', blocked: false },
     { id: 'R2', from: 'A', to: 'C', blocked: false },
     { id: 'R3', from: 'B', to: 'D', blocked: false },
@@ -27,65 +27,68 @@
     { id: 'R8', from: 'B', to: 'C', blocked: false }
   ];
 
-  const ICONS_BY_TYPE = {
-    GATE: '🚪',
-    HOSTEL: '🏢',
-    BUILDING: '🎓',
-    FACILITY: '⚽',
-    MEDICAL_CENTRE: '🏥'
+  // SVG Glyphs for clean vector node graphics (Zero emojis)
+  const NODE_GLYPHS = {
+    GATE: '<path d="M4 21V10l8-6 8 6v11M10 21v-7h4v7" fill="none" stroke="#ffffff" stroke-width="2"/>',
+    HOSTEL: '<rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="#ffffff" stroke-width="2"/><line x1="9" y1="8" x2="9" y2="8.01" stroke="#ffffff" stroke-width="2.5"/><line x1="15" y1="8" x2="15" y2="8.01" stroke="#ffffff" stroke-width="2.5"/><line x1="9" y1="12" x2="9" y2="12.01" stroke="#ffffff" stroke-width="2.5"/><line x1="15" y1="12" x2="15" y2="12.01" stroke="#ffffff" stroke-width="2.5"/><line x1="11" y1="17" x2="13" y2="17" stroke="#ffffff" stroke-width="2"/>',
+    BUILDING: '<path d="M3 21h18M6 21V8l6-4 6 4v13M10 12h4M10 16h4" fill="none" stroke="#ffffff" stroke-width="2"/>',
+    FACILITY: '<circle cx="12" cy="12" r="9" fill="none" stroke="#ffffff" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18M3 12a9 9 0 0 1 18 0" fill="none" stroke="#ffffff" stroke-width="1.5"/>',
+    MEDICAL_CENTRE: '<rect x="8" y="4" width="8" height="16" rx="2" fill="#ef4444"/><rect x="4" y="8" width="16" height="8" rx="2" fill="#ef4444"/><rect x="9.5" y="6" width="5" height="12" fill="#ffffff"/><rect x="6" y="9.5" width="12" height="5" fill="#ffffff"/>'
   };
 
-  // Application State
+  // State
   const state = {
-    locations: [...FALLBACK_LOCATIONS],
-    roads: [...FALLBACK_ROADS],
+    locations: [...CAMPUS_LOCATIONS],
+    roads: [...CAMPUS_ROADS],
     closures: [],
     dispatches: [],
     activeRoute: null,
     selectedOrigin: null,
     selectedDest: null,
     isConnected: false,
-    apiBase: determineApiBase(),
-    selectedRoadForModal: null
+    apiBase: detectApiBase(),
+    selectedRoadForModal: null,
+    isAnimating: false
   };
 
-  function determineApiBase() {
-    // If opened from the Java server on localhost:8080 (or another port)
+  function detectApiBase() {
     if (window.location.protocol.startsWith('http')) {
       return window.location.origin;
     }
-    // If opened via file:// or another static server (e.g. port 5500)
     return 'http://localhost:8080';
   }
 
   // DOM Elements
-  const elements = {
+  const el = {
     statusBadge: document.getElementById('backend-status-badge'),
     statusText: document.getElementById('backend-status-text'),
     refreshBtn: document.getElementById('refresh-data-btn'),
-    kpiLocations: document.getElementById('kpi-locations'),
-    kpiRoads: document.getElementById('kpi-roads'),
-    kpiClosures: document.getElementById('kpi-closures'),
-    kpiDispatches: document.getElementById('kpi-dispatches'),
-    svg: document.getElementById('campus-svg'),
+    statLocations: document.getElementById('top-stat-locations'),
+    statRoads: document.getElementById('top-stat-roads'),
+    statClosures: document.getElementById('top-stat-closures'),
+    statDispatches: document.getElementById('top-stat-dispatches'),
+    closureStatPill: document.getElementById('closure-stat-pill'),
     roadsLayer: document.getElementById('roads-layer'),
     activePathLayer: document.getElementById('active-path-layer'),
+    roadTagsLayer: document.getElementById('road-tags-layer'),
     nodesLayer: document.getElementById('nodes-layer'),
     vehicleLayer: document.getElementById('vehicle-layer'),
-    routeBanner: document.getElementById('route-banner'),
+    routeHudBanner: document.getElementById('route-hud-banner'),
     bannerAlgoBadge: document.getElementById('banner-algo-badge'),
     bannerPathText: document.getElementById('banner-path-text'),
     bannerMetaText: document.getElementById('banner-meta-text'),
-    animateVehicleBtn: document.getElementById('animate-ambulance-btn'),
+    animateAmbulanceBtn: document.getElementById('animate-ambulance-btn'),
     resetRouteBtn: document.getElementById('reset-route-btn'),
+    quickRoadsStrip: document.getElementById('quick-roads-strip'),
     routeForm: document.getElementById('route-form'),
     routeFrom: document.getElementById('route-from'),
     routeTo: document.getElementById('route-to'),
+    swapLocationsBtn: document.getElementById('swap-locations-btn'),
     routeResultBox: document.getElementById('route-result-box'),
-    resPathSequence: document.getElementById('res-path-sequence'),
+    resPathChips: document.getElementById('res-path-chips'),
     resSegments: document.getElementById('res-segments'),
     resEta: document.getElementById('res-eta'),
-    resAlgo: document.getElementById('res-algo'),
+    resAlgoPill: document.getElementById('res-algo-pill'),
     dispatchForm: document.getElementById('dispatch-form'),
     dispatchLocation: document.getElementById('dispatch-location'),
     dispatchDesc: document.getElementById('dispatch-desc'),
@@ -108,67 +111,66 @@
     dialogCloseBtn: document.getElementById('dialog-close-btn'),
     modalCancelBtn: document.getElementById('modal-cancel-btn'),
     toastContainer: document.getElementById('toast-container'),
-    navButtons: document.querySelectorAll('.nav-btn'),
-    tabPanels: document.querySelectorAll('.tab-panel')
+    tabButtons: document.querySelectorAll('.cockpit-tab-btn'),
+    tabPanels: document.querySelectorAll('.mode-panel')
   };
 
   // ========================================================
-  // Initialization
+  // App Boot & Lifecycle
   // ========================================================
 
-  async function init() {
-    setupNavigation();
-    setupEventListeners();
-    await checkConnectionAndLoadData();
+  async function boot() {
+    bindNavigation();
+    bindEvents();
     renderMap();
     populateSelects();
     renderRoadsTable();
     renderLocationsTable();
+    renderQuickRoadsStrip();
+
+    await syncWithBackend();
   }
 
   // ========================================================
-  // Backend Communication & Fallback Simulation
+  // Backend Communication & Auto-Sync
   // ========================================================
 
-  async function checkConnectionAndLoadData() {
-    updateStatus('checking', 'Connecting to Java backend...');
+  async function syncWithBackend() {
+    setBackendBadge('checking', 'Checking Java Backend...');
     try {
       const res = await fetch(`${state.apiBase}/api/status`, { mode: 'cors' });
       if (res.ok) {
-        const data = await res.json();
         state.isConnected = true;
-        updateStatus('connected', `Connected (${data.application || 'Java Server'})`);
-        await loadRemoteData();
+        setBackendBadge('connected', 'Java Backend Connected');
+        await fetchRemoteData();
         return;
       }
     } catch (e) {
-      // Backend not running on this origin, test fallback on 8080 if origin was different
       if (state.apiBase !== 'http://localhost:8080') {
         try {
-          const res = await fetch(`http://localhost:8080/api/status`, { mode: 'cors' });
+          const res = await fetch('http://localhost:8080/api/status', { mode: 'cors' });
           if (res.ok) {
             state.apiBase = 'http://localhost:8080';
             state.isConnected = true;
-            updateStatus('connected', 'Connected (Java Server :8080)');
-            await loadRemoteData();
+            setBackendBadge('connected', 'Java Backend :8080');
+            await fetchRemoteData();
             return;
           }
         } catch (ignored) {}
       }
     }
 
-    // Offline / Standalone mode
     state.isConnected = false;
-    updateStatus('standalone', 'Demo Mode (Standalone Simulation)');
-    updateKpis();
+    setBackendBadge('standalone', 'Standalone Simulation Mode');
+    updateMetricCounts();
   }
 
-  function updateStatus(type, message) {
-    elements.statusBadge.className = `status-pill status-${type}`;
-    elements.statusText.textContent = message;
+  function setBackendBadge(status, text) {
+    el.statusBadge.className = `server-badge status-${status}`;
+    el.statusText.textContent = text;
   }
 
-  async function loadRemoteData() {
+  async function fetchRemoteData() {
     try {
       const [locsRes, roadsRes, sumRes, closuresRes, dispRes] = await Promise.all([
         fetch(`${state.apiBase}/api/locations`),
@@ -178,35 +180,380 @@
         fetch(`${state.apiBase}/api/dispatches`)
       ]);
 
-      if (locsRes.ok) state.locations = await locsRes.json();
+      if (locsRes.ok) {
+        const rawLocs = await locsRes.json();
+        // Merge layout coordinates
+        const coordMap = {};
+        CAMPUS_LOCATIONS.forEach(c => { coordMap[c.id] = { x: c.x, y: c.y }; });
+        state.locations = rawLocs.map(l => ({
+          ...l,
+          x: coordMap[l.id] ? coordMap[l.id].x : 300,
+          y: coordMap[l.id] ? coordMap[l.id].y : 300
+        }));
+      }
+
       if (roadsRes.ok) state.roads = await roadsRes.json();
       if (closuresRes.ok) state.closures = await closuresRes.json();
       if (dispRes.ok) state.dispatches = await dispRes.json();
 
-      updateKpis();
+      updateMetricCounts();
       renderMap();
       renderRoadsTable();
       renderLocationsTable();
-      renderClosureList();
+      renderQuickRoadsStrip();
+      renderClosureFeed();
       renderDispatchHistory();
     } catch (err) {
-      console.warn('Error fetching remote data, keeping local state:', err);
+      console.warn('Backend query error, using local state:', err);
     }
   }
 
-  function updateKpis() {
-    elements.kpiLocations.textContent = state.locations.length;
-    elements.kpiRoads.textContent = state.roads.length;
+  function updateMetricCounts() {
+    el.statLocations.textContent = state.locations.length;
     const blockedCount = state.roads.filter(r => r.blocked).length;
-    elements.kpiClosures.textContent = blockedCount;
-    elements.kpiDispatches.textContent = state.dispatches.length;
+    const openCount = state.roads.length - blockedCount;
+    el.statRoads.textContent = `${openCount}/${state.roads.length}`;
+    el.statClosures.textContent = blockedCount;
+    el.statDispatches.textContent = state.dispatches.length;
+
+    if (blockedCount > 0) {
+      el.closureStatPill.classList.add('has-closures');
+    } else {
+      el.closureStatPill.classList.remove('has-closures');
+    }
   }
 
   // ========================================================
-  // Graph Pathfinding (Client-Side Simulation Fallback)
+  // High-Definition SVG Map Engine
   // ========================================================
 
-  function localFindRoute(fromId, toId, useDfs) {
+  function renderMap() {
+    drawRoads();
+    drawRoadShields();
+    drawNodes();
+    if (state.activeRoute) {
+      drawActivePath(state.activeRoute.path);
+    }
+  }
+
+  function drawRoads() {
+    el.roadsLayer.innerHTML = '';
+    const locMap = getLocationsMap();
+
+    state.roads.forEach(road => {
+      const p1 = locMap[road.from];
+      const p2 = locMap[road.to];
+      if (!p1 || !p2) return;
+
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.setAttribute('class', `road-group ${road.blocked ? 'blocked' : ''}`);
+
+      // Casing / Shoulder
+      const casing = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      casing.setAttribute('x1', p1.x);
+      casing.setAttribute('y1', p1.y);
+      casing.setAttribute('x2', p2.x);
+      casing.setAttribute('y2', p2.y);
+      casing.setAttribute('class', 'svg-road-casing');
+
+      // Surface
+      const surface = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      surface.setAttribute('x1', p1.x);
+      surface.setAttribute('y1', p1.y);
+      surface.setAttribute('x2', p2.x);
+      surface.setAttribute('y2', p2.y);
+      surface.setAttribute('class', 'svg-road-surface');
+      surface.addEventListener('click', () => toggleRoadStatePrompt(road));
+
+      // Centerline
+      const centerline = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      centerline.setAttribute('x1', p1.x);
+      centerline.setAttribute('y1', p1.y);
+      centerline.setAttribute('x2', p2.x);
+      centerline.setAttribute('y2', p2.y);
+      centerline.setAttribute('class', 'svg-road-centerline');
+
+      group.appendChild(casing);
+      group.appendChild(surface);
+      group.appendChild(centerline);
+      el.roadsLayer.appendChild(group);
+    });
+  }
+
+  function drawRoadShields() {
+    el.roadTagsLayer.innerHTML = '';
+    const locMap = getLocationsMap();
+
+    state.roads.forEach(road => {
+      const p1 = locMap[road.from];
+      const p2 = locMap[road.to];
+      if (!p1 || !p2) return;
+
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', `road-shield-group ${road.blocked ? 'blocked' : ''}`);
+      g.setAttribute('transform', `translate(${midX}, ${midY})`);
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleRoadStatePrompt(road);
+      });
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', -16);
+      rect.setAttribute('y', -9);
+      rect.setAttribute('width', 32);
+      rect.setAttribute('height', 18);
+      rect.setAttribute('class', 'road-shield-bg');
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('class', 'road-shield-text');
+      text.textContent = road.blocked ? 'STOP' : road.id;
+
+      g.appendChild(rect);
+      g.appendChild(text);
+      el.roadTagsLayer.appendChild(g);
+    });
+  }
+
+  function drawNodes() {
+    el.nodesLayer.innerHTML = '';
+
+    state.locations.forEach(loc => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const isOrigin = state.selectedOrigin === loc.id;
+      const isDest = state.selectedDest === loc.id;
+      const isHospital = loc.id === 'F' || loc.isMedicalCentre;
+
+      let cls = 'svg-node';
+      if (isOrigin) cls += ' is-origin';
+      if (isDest) cls += ' is-dest';
+      if (isHospital) cls += ' is-hospital';
+      g.setAttribute('class', cls);
+      g.setAttribute('transform', `translate(${loc.x}, ${loc.y})`);
+
+      // Radar Pulse for Hospital
+      if (isHospital) {
+        const radar = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        radar.setAttribute('class', 'hospital-radar');
+        radar.setAttribute('r', 24);
+        g.appendChild(radar);
+      }
+
+      // Base Circle
+      const base = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      base.setAttribute('class', 'node-base-circle');
+      base.setAttribute('r', 22);
+
+      // Icon Glyph
+      const iconGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      iconGroup.setAttribute('transform', 'translate(-12, -12)');
+      iconGroup.innerHTML = NODE_GLYPHS[loc.type] || NODE_GLYPHS.BUILDING;
+
+      // Bottom Label Pill
+      const pillW = Math.max(88, loc.name.length * 7.5);
+      const pillH = 22;
+      const pillY = 32;
+
+      const pillBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      pillBg.setAttribute('x', -pillW / 2);
+      pillBg.setAttribute('y', pillY);
+      pillBg.setAttribute('width', pillW);
+      pillBg.setAttribute('height', pillH);
+      pillBg.setAttribute('class', 'node-label-pill');
+
+      const pillText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      pillText.setAttribute('x', 0);
+      pillText.setAttribute('y', pillY + 11);
+      pillText.setAttribute('class', 'node-label-text');
+      pillText.textContent = `${loc.id} &bull; ${loc.name}`;
+      pillText.innerHTML = `<tspan class="node-id-badge">${loc.id}</tspan> &nbsp;${loc.name}`;
+
+      g.appendChild(base);
+      g.appendChild(iconGroup);
+      g.appendChild(pillBg);
+      g.appendChild(pillText);
+
+      g.addEventListener('click', () => handleNodeClick(loc));
+      el.nodesLayer.appendChild(g);
+    });
+  }
+
+  function handleNodeClick(loc) {
+    if (!state.selectedOrigin) {
+      state.selectedOrigin = loc.id;
+      el.routeFrom.value = loc.id;
+      el.dispatchLocation.value = loc.id;
+      toast(`Selected ${loc.name} (${loc.id}) as Start Point`, 'info');
+    } else if (state.selectedOrigin === loc.id) {
+      state.selectedOrigin = null;
+      el.routeFrom.value = '';
+    } else {
+      state.selectedDest = loc.id;
+      el.routeTo.value = loc.id;
+      toast(`Selected ${loc.name} (${loc.id}) as Destination`, 'info');
+      calculateRoute(state.selectedOrigin, state.selectedDest);
+    }
+    renderMap();
+  }
+
+  function toggleRoadStatePrompt(road) {
+    if (road.blocked) {
+      if (confirm(`Road ${road.id} (${road.from} <-> ${road.to}) is currently closed. Reopen this road segment?`)) {
+        reopenRoad(road.id);
+      }
+    } else {
+      state.selectedRoadForModal = road;
+      el.modalRoadId.textContent = road.id;
+      el.modalRoadEndpoints.textContent = `${road.from} <-> ${road.to}`;
+      el.modalRoadReason.value = 'Road obstruction / Maintenance';
+      el.roadModal.showModal();
+    }
+  }
+
+  // ========================================================
+  // Active Route Drawing & Ambulance Simulation
+  // ========================================================
+
+  function drawActivePath(path) {
+    el.activePathLayer.innerHTML = '';
+    if (!path || path.length < 2) return;
+
+    const locMap = getLocationsMap();
+    let d = '';
+
+    for (let i = 0; i < path.length; i++) {
+      const loc = locMap[path[i]];
+      if (!loc) continue;
+      d += (i === 0 ? `M ${loc.x} ${loc.y}` : ` L ${loc.x} ${loc.y}`);
+    }
+
+    const pathLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pathLine.setAttribute('d', d);
+    pathLine.setAttribute('class', 'svg-active-glow');
+    el.activePathLayer.appendChild(pathLine);
+  }
+
+  function simulateAmbulanceAlongPath(path) {
+    if (!path || path.length < 2 || state.isAnimating) return;
+    state.isAnimating = true;
+
+    const locMap = getLocationsMap();
+    const vehicle = el.vehicleLayer;
+    vehicle.style.display = 'block';
+
+    let currentSegment = 0;
+    const segmentDuration = 700; // ms per hop
+
+    function animateHop() {
+      if (currentSegment >= path.length - 1) {
+        state.isAnimating = false;
+        toast('Ambulance reached facility destination safely!', 'success');
+        setTimeout(() => { vehicle.style.display = 'none'; }, 2200);
+        return;
+      }
+
+      const p1 = locMap[path[currentSegment]];
+      const p2 = locMap[path[currentSegment + 1]];
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+      const startTime = performance.now();
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / segmentDuration);
+        const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+
+        const curX = p1.x + (p2.x - p1.x) * ease;
+        const curY = p1.y + (p2.y - p1.y) * ease;
+
+        vehicle.setAttribute('transform', `translate(${curX}, ${curY}) rotate(${angle})`);
+
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          currentSegment++;
+          animateHop();
+        }
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    animateHop();
+  }
+
+  // ========================================================
+  // Routing Engine (API + Client Fallback)
+  // ========================================================
+
+  async function calculateRoute(from, to, algo = 'bfs') {
+    if (!from || !to) return;
+    toast(`Computing ${algo.toUpperCase()} path...`, 'info');
+
+    let resData;
+    if (state.isConnected) {
+      try {
+        const res = await fetch(`${state.apiBase}/api/route`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from, to, algorithm: algo })
+        });
+        resData = await res.json();
+      } catch (e) {
+        resData = localGraphSearch(from, to, algo === 'dfs');
+      }
+    } else {
+      resData = localGraphSearch(from, to, algo === 'dfs');
+    }
+
+    if (resData.found) {
+      state.activeRoute = resData;
+      state.selectedOrigin = from;
+      state.selectedDest = to;
+
+      drawActivePath(resData.path);
+      renderMap();
+
+      // Update Side Results
+      el.routeResultBox.classList.remove('hidden');
+      el.resAlgoPill.textContent = resData.algorithm;
+      el.resSegments.textContent = resData.roadSegments;
+      el.resEta.textContent = `${resData.travelTimeMinutes} min`;
+
+      // Render Path Chips
+      el.resPathChips.innerHTML = '';
+      const locMap = getLocationsMap();
+      resData.path.forEach((nodeId, idx) => {
+        const nodeLoc = locMap[nodeId];
+        const chip = document.createElement('span');
+        chip.className = 'path-node-chip';
+        chip.textContent = `${nodeId} (${nodeLoc ? nodeLoc.name : nodeId})`;
+        el.resPathChips.appendChild(chip);
+
+        if (idx < resData.path.length - 1) {
+          const arrow = document.createElement('span');
+          arrow.className = 'path-arrow';
+          arrow.innerHTML = '&rarr;';
+          el.resPathChips.appendChild(arrow);
+        }
+      });
+
+      // Show HUD banner
+      el.routeHudBanner.classList.remove('hidden');
+      el.bannerAlgoBadge.textContent = `${resData.algorithm} ROUTE`;
+      el.bannerPathText.textContent = resData.path.map(id => locMap[id] ? locMap[id].name : id).join(' ➔ ');
+      el.bannerMetaText.textContent = `${resData.roadSegments} Segments • ${resData.travelTimeMinutes} min ETA`;
+
+      toast(`Optimal Route Found: ${resData.path.join(' ➔ ')}`, 'success');
+    } else {
+      toast(resData.error || 'No open route found.', 'emergency');
+      el.routeHudBanner.classList.add('hidden');
+      el.activePathLayer.innerHTML = '';
+    }
+  }
+
+  function localGraphSearch(fromId, toId, useDfs) {
     const adj = {};
     state.locations.forEach(l => { adj[l.id] = []; });
 
@@ -214,8 +561,8 @@
       if (!r.blocked) {
         if (!adj[r.from]) adj[r.from] = [];
         if (!adj[r.to]) adj[r.to] = [];
-        adj[r.from].push({ node: r.to, roadId: r.id });
-        adj[r.to].push({ node: r.from, roadId: r.id });
+        adj[r.from].push(r.to);
+        adj[r.to].push(r.from);
       }
     });
 
@@ -231,9 +578,9 @@
           found = true;
           return;
         }
-        for (const edge of adj[curr] || []) {
-          if (!visited.has(edge.node)) {
-            dfs(edge.node);
+        for (const next of adj[curr] || []) {
+          if (!visited.has(next)) {
+            dfs(next);
             if (found) return;
           }
         }
@@ -251,7 +598,6 @@
         };
       }
     } else {
-      // BFS
       const queue = [[fromId]];
       const visited = new Set([fromId]);
 
@@ -269,293 +615,24 @@
           };
         }
 
-        for (const edge of adj[currNode] || []) {
-          if (!visited.has(edge.node)) {
-            visited.add(edge.node);
-            queue.push([...currPath, edge.node]);
+        for (const next of adj[currNode] || []) {
+          if (!visited.has(next)) {
+            visited.add(next);
+            queue.push([...currPath, next]);
           }
         }
       }
     }
 
-    return {
-      found: false,
-      error: 'No route is available with the current blocked roads.'
-    };
+    return { found: false, error: 'No route available with the current blocked roads.' };
   }
 
   // ========================================================
-  // SVG Map Rendering & Interactions
+  // Emergency Ambulance Dispatch
   // ========================================================
-
-  function renderMap() {
-    renderRoadsSvg();
-    renderNodesSvg();
-    if (state.activeRoute) {
-      highlightPathOnMap(state.activeRoute.path);
-    }
-  }
-
-  function renderRoadsSvg() {
-    elements.roadsLayer.innerHTML = '';
-    const locMap = getLocationsMap();
-
-    state.roads.forEach(road => {
-      const locA = locMap[road.from];
-      const locB = locMap[road.to];
-      if (!locA || !locB) return;
-
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.setAttribute('class', `road-svg-group ${road.blocked ? 'blocked' : ''}`);
-
-      // Road Edge Line
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', locA.x);
-      line.setAttribute('y1', locA.y);
-      line.setAttribute('x2', locB.x);
-      line.setAttribute('y2', locB.y);
-      line.setAttribute('class', `svg-road ${road.blocked ? 'blocked' : ''}`);
-      line.setAttribute('data-road-id', road.id);
-      line.addEventListener('click', () => handleRoadClick(road));
-
-      // Road Center Tag
-      const midX = (locA.x + locB.x) / 2;
-      const midY = (locA.y + locB.y) / 2;
-
-      const tagGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      tagGroup.setAttribute('class', `road-tag-group ${road.blocked ? 'blocked' : ''}`);
-      tagGroup.setAttribute('transform', `translate(${midX}, ${midY})`);
-      tagGroup.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleRoadClick(road);
-      });
-
-      const tagRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      tagRect.setAttribute('x', -18);
-      tagRect.setAttribute('y', -10);
-      tagRect.setAttribute('width', 36);
-      tagRect.setAttribute('height', 20);
-      tagRect.setAttribute('class', 'road-tag-rect');
-
-      const tagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      tagText.setAttribute('class', 'road-tag-text');
-      tagText.textContent = road.blocked ? '🚧' : road.id;
-
-      tagGroup.appendChild(tagRect);
-      tagGroup.appendChild(tagText);
-
-      group.appendChild(line);
-      group.appendChild(tagGroup);
-      elements.roadsLayer.appendChild(group);
-    });
-  }
-
-  function renderNodesSvg() {
-    elements.nodesLayer.innerHTML = '';
-
-    state.locations.forEach(loc => {
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      const isOrigin = state.selectedOrigin === loc.id;
-      const isDest = state.selectedDest === loc.id;
-      const isHospital = loc.id === 'F' || loc.isMedicalCentre;
-
-      let cls = 'svg-node-group';
-      if (isOrigin) cls += ' selected-origin';
-      if (isDest) cls += ' selected-dest';
-      if (isHospital) cls += ' is-hospital';
-      group.setAttribute('class', cls);
-      group.setAttribute('transform', `translate(${loc.x}, ${loc.y})`);
-
-      // Hospital Pulse Beacon
-      if (isHospital) {
-        const beacon = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        beacon.setAttribute('class', 'hospital-beacon');
-        beacon.setAttribute('r', 24);
-        group.appendChild(beacon);
-      }
-
-      // Main Circle
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('class', 'svg-node-ring');
-      circle.setAttribute('r', 24);
-
-      // Icon & ID
-      const textId = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      textId.setAttribute('class', 'svg-node-id');
-      textId.setAttribute('y', 0);
-      textId.textContent = loc.id;
-
-      // Label under node
-      const textLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      textLabel.setAttribute('class', 'svg-node-label');
-      textLabel.setAttribute('y', 38);
-      const icon = ICONS_BY_TYPE[loc.type] || '📍';
-      textLabel.textContent = `${icon} ${loc.name}`;
-
-      group.appendChild(circle);
-      group.appendChild(textId);
-      group.appendChild(textLabel);
-
-      group.addEventListener('click', () => handleNodeClick(loc));
-      elements.nodesLayer.appendChild(group);
-    });
-  }
-
-  function handleNodeClick(loc) {
-    if (!state.selectedOrigin) {
-      state.selectedOrigin = loc.id;
-      elements.routeFrom.value = loc.id;
-      elements.dispatchLocation.value = loc.id;
-      showToast(`Selected ${loc.name} (${loc.id}) as start location`, 'info');
-    } else if (state.selectedOrigin === loc.id) {
-      state.selectedOrigin = null;
-      elements.routeFrom.value = '';
-    } else {
-      state.selectedDest = loc.id;
-      elements.routeTo.value = loc.id;
-      showToast(`Selected ${loc.name} (${loc.id}) as destination`, 'info');
-      // Trigger route finding automatically
-      calculateRoute(state.selectedOrigin, state.selectedDest);
-    }
-    renderMap();
-  }
-
-  function handleRoadClick(road) {
-    if (road.blocked) {
-      // Prompt to reopen
-      if (confirm(`Road ${road.id} (${road.from} <-> ${road.to}) is currently BLOCKED. Reopen this road?`)) {
-        reopenRoad(road.id);
-      }
-    } else {
-      // Open standard <dialog>
-      state.selectedRoadForModal = road;
-      elements.modalRoadId.textContent = road.id;
-      elements.modalRoadEndpoints.textContent = `${road.from} <-> ${road.to}`;
-      elements.modalRoadReason.value = 'Road obstruction / Maintenance';
-      elements.roadModal.showModal();
-    }
-  }
-
-  // ========================================================
-  // Route Highlighting & Simulation
-  // ========================================================
-
-  function highlightPathOnMap(path) {
-    elements.activePathLayer.innerHTML = '';
-    if (!path || path.length < 2) return;
-
-    const locMap = getLocationsMap();
-    let d = '';
-
-    for (let i = 0; i < path.length; i++) {
-      const loc = locMap[path[i]];
-      if (!loc) continue;
-      d += (i === 0 ? `M ${loc.x} ${loc.y}` : ` L ${loc.x} ${loc.y}`);
-    }
-
-    const pathElem = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    pathElem.setAttribute('d', d);
-    pathElem.setAttribute('class', 'svg-active-path');
-    elements.activePathLayer.appendChild(pathElem);
-  }
-
-  function animateVehicleAlongPath(path, onComplete) {
-    if (!path || path.length < 2) return;
-    const locMap = getLocationsMap();
-    const layer = elements.vehicleLayer;
-    layer.style.display = 'block';
-
-    let currentSegment = 0;
-    const durationPerSegment = 800; // ms
-
-    function animateStep() {
-      if (currentSegment >= path.length - 1) {
-        showToast('Ambulance safely reached destination!', 'success');
-        if (onComplete) onComplete();
-        setTimeout(() => { layer.style.display = 'none'; }, 2000);
-        return;
-      }
-
-      const p1 = locMap[path[currentSegment]];
-      const p2 = locMap[path[currentSegment + 1]];
-      const startTime = performance.now();
-
-      function frame(now) {
-        const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / durationPerSegment);
-        // Easing
-        const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
-        const curX = p1.x + (p2.x - p1.x) * ease;
-        const curY = p1.y + (p2.y - p1.y) * ease;
-
-        layer.setAttribute('transform', `translate(${curX}, ${curY})`);
-
-        if (progress < 1) {
-          requestAnimationFrame(frame);
-        } else {
-          currentSegment++;
-          animateStep();
-        }
-      }
-      requestAnimationFrame(frame);
-    }
-
-    animateStep();
-  }
-
-  // ========================================================
-  // Action Handlers: Route, Dispatch, Closures
-  // ========================================================
-
-  async function calculateRoute(from, to, algorithm = 'bfs') {
-    if (!from || !to) return;
-    showToast(`Calculating ${algorithm.toUpperCase()} route...`, 'info');
-
-    let result;
-    if (state.isConnected) {
-      try {
-        const res = await fetch(`${state.apiBase}/api/route`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from, to, algorithm })
-        });
-        result = await res.json();
-      } catch (e) {
-        result = localFindRoute(from, to, algorithm === 'dfs');
-      }
-    } else {
-      result = localFindRoute(from, to, algorithm === 'dfs');
-    }
-
-    if (result.found) {
-      state.activeRoute = result;
-      state.selectedOrigin = from;
-      state.selectedDest = to;
-      highlightPathOnMap(result.path);
-      renderMap();
-
-      // Show result UI
-      elements.routeResultBox.classList.remove('hidden');
-      elements.resPathSequence.textContent = result.path.join(' ➔ ');
-      elements.resSegments.textContent = result.roadSegments;
-      elements.resEta.textContent = `${result.travelTimeMinutes} min`;
-      elements.resAlgo.textContent = result.algorithm === 'BFS' ? 'Breadth-First (Shortest)' : 'Depth-First (Alternative)';
-
-      // Show floating banner
-      elements.routeBanner.classList.remove('hidden');
-      elements.bannerAlgoBadge.textContent = `${result.algorithm} Route`;
-      elements.bannerPathText.textContent = result.path.join(' ➔ ');
-      elements.bannerMetaText.textContent = `${result.roadSegments} Segments • ${result.travelTimeMinutes} min ETA`;
-      showToast(`Route found: ${result.path.join(' ➔ ')}`, 'success');
-    } else {
-      showToast(result.error || 'No route found.', 'emergency');
-      elements.routeBanner.classList.add('hidden');
-      elements.activePathLayer.innerHTML = '';
-    }
-  }
 
   async function dispatchAmbulance(locationId, description, priority) {
-    showToast(`Dispatching emergency ambulance to ${locationId}...`, 'emergency');
+    toast(`Dispatching ambulance to location ${locationId}...`, 'emergency');
 
     let receipt;
     if (state.isConnected) {
@@ -567,10 +644,10 @@
         });
         receipt = await res.json();
       } catch (e) {
-        receipt = localDispatch(locationId, description, priority);
+        receipt = localDispatchFallback(locationId, description, priority);
       }
     } else {
-      receipt = localDispatch(locationId, description, priority);
+      receipt = localDispatchFallback(locationId, description, priority);
     }
 
     if (receipt && receipt.success) {
@@ -582,49 +659,52 @@
         algorithm: 'BFS'
       };
       state.selectedOrigin = locationId;
-      state.selectedDest = receipt.destination || 'F';
+      state.selectedDest = 'F';
 
-      // Update Receipt Box
-      elements.dispatchReceiptBox.classList.remove('hidden');
-      elements.receiptId.textContent = receipt.id;
-      elements.receiptVehicle.textContent = receipt.vehicle;
-      elements.receiptIncident.textContent = `${receipt.description} at ${receipt.incidentLocation}`;
-      elements.receiptRoute.textContent = receipt.path.join(' ➔ ');
-      elements.receiptEta.textContent = `${receipt.etaMinutes} minutes`;
+      // Update Modern Receipt Card
+      el.dispatchReceiptBox.classList.remove('hidden');
+      el.receiptId.textContent = receipt.id;
+      el.receiptVehicle.textContent = receipt.vehicle;
+      el.receiptIncident.textContent = `${receipt.description} (${receipt.incidentLocation})`;
+      el.receiptRoute.textContent = receipt.path.join(' ➔ ');
+      el.receiptEta.textContent = `${receipt.etaMinutes} minutes`;
 
       renderMap();
       renderDispatchHistory();
-      updateKpis();
+      updateMetricCounts();
 
       // Trigger automatic vehicle animation
-      animateVehicleAlongPath(receipt.path);
-      showToast(`Ambulance ${receipt.id} dispatched!`, 'emergency');
+      simulateAmbulanceAlongPath(receipt.path);
+      toast(`Unit Dispatched: ${receipt.id} (${receipt.vehicle})`, 'emergency');
     } else {
-      showToast(receipt.error || 'Could not dispatch ambulance.', 'emergency');
+      toast(receipt.error || 'Failed to dispatch ambulance.', 'emergency');
     }
   }
 
-  function localDispatch(locationId, description, priority) {
-    const routeRes = localFindRoute(locationId, 'F', false);
-    if (!routeRes.found) {
-      return { success: false, error: 'No open route to Campus Medical Centre!' };
+  function localDispatchFallback(locationId, description, priority) {
+    const route = localGraphSearch(locationId, 'F', false);
+    if (!route.found) {
+      return { success: false, error: 'No open pathway to Campus Medical Centre!' };
     }
-    const nextId = `DSP-${String(state.dispatches.length + 1).padStart(3, '0')}`;
+    const id = `DSP-${String(state.dispatches.length + 1).padStart(3, '0')}`;
     return {
       success: true,
-      id: nextId,
+      id: id,
       status: 'DISPATCHED',
       vehicle: 'Ambulance AMB-01',
       priority: priority,
       incidentLocation: locationId,
       destination: 'F',
       description: description,
-      path: routeRes.path,
-      segments: routeRes.roadSegments,
-      etaMinutes: routeRes.travelTimeMinutes,
-      etaString: `${routeRes.travelTimeMinutes} min`
+      path: route.path,
+      segments: route.roadSegments,
+      etaMinutes: route.travelTimeMinutes
     };
   }
+
+  // ========================================================
+  // Road Closures & Reopening
+  // ========================================================
 
   async function closeRoad(roadId, reason) {
     if (state.isConnected) {
@@ -637,9 +717,8 @@
       } catch (ignored) {}
     }
 
-    // Update local state
-    const target = state.roads.find(r => r.id === roadId);
-    if (target) target.blocked = true;
+    const road = state.roads.find(r => r.id === roadId);
+    if (road) road.blocked = true;
     state.closures.push({
       roadId,
       reason,
@@ -648,11 +727,11 @@
 
     renderMap();
     renderRoadsTable();
-    renderClosureList();
-    updateKpis();
-    showToast(`Road ${roadId} marked as BLOCKED`, 'emergency');
+    renderQuickRoadsStrip();
+    renderClosureFeed();
+    updateMetricCounts();
+    toast(`Road ${roadId} closed: ${reason}`, 'emergency');
 
-    // Re-calculate active route if it relied on this road
     if (state.activeRoute) {
       calculateRoute(state.selectedOrigin, state.selectedDest, state.activeRoute.algorithm.toLowerCase());
     }
@@ -669,15 +748,16 @@
       } catch (ignored) {}
     }
 
-    const target = state.roads.find(r => r.id === roadId);
-    if (target) target.blocked = false;
+    const road = state.roads.find(r => r.id === roadId);
+    if (road) road.blocked = false;
     state.closures = state.closures.filter(c => c.roadId !== roadId);
 
     renderMap();
     renderRoadsTable();
-    renderClosureList();
-    updateKpis();
-    showToast(`Road ${roadId} reopened for traffic`, 'success');
+    renderQuickRoadsStrip();
+    renderClosureFeed();
+    updateMetricCounts();
+    toast(`Road ${roadId} reopened for traffic`, 'success');
 
     if (state.activeRoute) {
       calculateRoute(state.selectedOrigin, state.selectedDest, state.activeRoute.algorithm.toLowerCase());
@@ -685,244 +765,262 @@
   }
 
   // ========================================================
-  // DOM Rendering & Tables
+  // Cockpit Table & UI Renderers
   // ========================================================
 
   function populateSelects() {
-    const locs = state.locations;
-    elements.routeFrom.innerHTML = '<option value="">Select Origin...</option>';
-    elements.routeTo.innerHTML = '<option value="">Select Destination...</option>';
-    elements.dispatchLocation.innerHTML = '<option value="">Select Incident Point...</option>';
+    el.routeFrom.innerHTML = '<option value="">Select origin point...</option>';
+    el.routeTo.innerHTML = '<option value="">Select destination point...</option>';
+    el.dispatchLocation.innerHTML = '<option value="">Select incident location...</option>';
 
-    locs.forEach(loc => {
-      const opt1 = new Option(`${loc.id} - ${loc.name}`, loc.id);
-      const opt2 = new Option(`${loc.id} - ${loc.name}`, loc.id);
-      const opt3 = new Option(`${loc.id} - ${loc.name}`, loc.id);
-      elements.routeFrom.add(opt1);
-      elements.routeTo.add(opt2);
-      elements.dispatchLocation.add(opt3);
+    state.locations.forEach(l => {
+      const o1 = new Option(`${l.id} - ${l.name}`, l.id);
+      const o2 = new Option(`${l.id} - ${l.name}`, l.id);
+      const o3 = new Option(`${l.id} - ${l.name}`, l.id);
+      el.routeFrom.add(o1);
+      el.routeTo.add(o2);
+      el.dispatchLocation.add(o3);
     });
   }
 
   function renderRoadsTable() {
-    elements.roadsTableBody.innerHTML = '';
+    el.roadsTableBody.innerHTML = '';
     state.roads.forEach(road => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <th scope="row"><strong>${road.id}</strong></th>
+        <th scope="row"><strong class="font-mono">${road.id}</strong></th>
         <td>${road.from} &harr; ${road.to}</td>
         <td>
-          <span class="badge ${road.blocked ? 'badge-danger' : 'badge-success'}">
+          <span class="${road.blocked ? 'status-badge-blocked' : 'status-badge-open'}">
             ${road.blocked ? 'BLOCKED' : 'OPEN'}
           </span>
         </td>
         <td>
-          <button type="button" class="btn-sm ${road.blocked ? 'btn-primary' : 'btn-danger'}" data-road="${road.id}">
-            ${road.blocked ? 'Reopen' : 'Close'}
+          <button type="button" class="table-action-btn ${road.blocked ? 'btn-reopen' : ''}" data-road="${road.id}">
+            ${road.blocked ? 'Reopen' : 'Block'}
           </button>
         </td>
       `;
-      const btn = tr.querySelector('button');
+      tr.querySelector('button').addEventListener('click', () => {
+        if (road.blocked) {
+          reopenRoad(road.id);
+        } else {
+          toggleRoadStatePrompt(road);
+        }
+      });
+      el.roadsTableBody.appendChild(tr);
+    });
+  }
+
+  function renderQuickRoadsStrip() {
+    el.quickRoadsStrip.innerHTML = '';
+    state.roads.forEach(road => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `quick-road-btn ${road.blocked ? 'is-blocked' : ''}`;
+      btn.textContent = `${road.id} ${road.blocked ? '✖' : '✔'}`;
+      btn.title = `Click to ${road.blocked ? 'reopen' : 'close'} Road ${road.id}`;
       btn.addEventListener('click', () => {
         if (road.blocked) {
           reopenRoad(road.id);
         } else {
-          handleRoadClick(road);
+          toggleRoadStatePrompt(road);
         }
       });
-      elements.roadsTableBody.appendChild(tr);
+      el.quickRoadsStrip.appendChild(btn);
     });
   }
 
   function renderLocationsTable(filter = '') {
-    elements.locationsTableBody.innerHTML = '';
-    const term = filter.toLowerCase().trim();
-    const locMap = getLocationsMap();
-
-    const filtered = state.locations.filter(loc =>
-      loc.id.toLowerCase().includes(term) || loc.name.toLowerCase().includes(term)
-    );
+    el.locationsTableBody.innerHTML = '';
+    const q = filter.toLowerCase().trim();
+    const filtered = state.locations.filter(l => l.id.toLowerCase().includes(q) || l.name.toLowerCase().includes(q));
 
     if (filtered.length === 0) {
-      elements.locationsTableBody.innerHTML = '<tr class="empty-row"><td colspan="4">No locations match query.</td></tr>';
+      el.locationsTableBody.innerHTML = '<tr class="empty-row"><td colspan="4">No campus nodes match search.</td></tr>';
       return;
     }
 
-    filtered.forEach(loc => {
-      // Find connected roads
+    filtered.forEach(l => {
       const connections = state.roads
-        .filter(r => r.from === loc.id || r.to === loc.id)
-        .map(r => `${r.id} (${r.from === loc.id ? r.to : r.from})`)
+        .filter(r => r.from === l.id || r.to === l.id)
+        .map(r => r.id)
         .join(', ');
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <th scope="row"><strong>${loc.id}</strong></th>
-        <td>${loc.name} ${loc.id === 'F' ? '<span class="badge badge-danger">Medical Centre</span>' : ''}</td>
-        <td><span class="badge badge-info">${loc.type}</span></td>
-        <td class="font-mono">${connections || 'None'}</td>
+        <th scope="row"><span class="font-mono text-cyan">${l.id}</span></th>
+        <td><strong>${l.name}</strong> ${l.isMedicalCentre ? '<span class="status-badge-blocked">MEDICAL</span>' : ''}</td>
+        <td><span class="text-dim">${l.type}</span></td>
+        <td class="font-mono text-dim">${connections}</td>
       `;
-      elements.locationsTableBody.appendChild(tr);
+      el.locationsTableBody.appendChild(tr);
     });
   }
 
-  function renderClosureList() {
-    elements.closureList.innerHTML = '';
+  function renderClosureFeed() {
+    el.closureList.innerHTML = '';
     if (state.closures.length === 0) {
-      elements.closureList.innerHTML = '<li class="empty-state">No road closures currently reported. All lanes clear.</li>';
+      el.closureList.innerHTML = '<li class="feed-empty">No active road closures. All 8 routes operational.</li>';
       return;
     }
 
-    state.closures.forEach(closure => {
+    state.closures.forEach(c => {
       const li = document.createElement('li');
-      li.className = 'closure-item';
+      li.className = 'closure-card';
       li.innerHTML = `
         <div>
-          <strong>Road ${closure.roadId}</strong> &bull; <span>${closure.reason}</span>
+          <strong class="font-mono text-red">ROAD ${c.roadId}</strong> &bull; <span>${c.reason}</span>
         </div>
-        <button type="button" class="btn-sm btn-ghost" data-road="${closure.roadId}">Reopen</button>
+        <button type="button" class="table-action-btn btn-reopen" data-road="${c.roadId}">Reopen</button>
       `;
-      li.querySelector('button').addEventListener('click', () => reopenRoad(closure.roadId));
-      elements.closureList.appendChild(li);
+      li.querySelector('button').addEventListener('click', () => reopenRoad(c.roadId));
+      el.closureList.appendChild(li);
     });
   }
 
   function renderDispatchHistory() {
-    elements.historyTableBody.innerHTML = '';
+    el.historyTableBody.innerHTML = '';
     if (state.dispatches.length === 0) {
-      elements.historyTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">No dispatches recorded yet.</td></tr>';
+      el.historyTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">No dispatches logged in this session.</td></tr>';
       return;
     }
 
     state.dispatches.forEach(d => {
       const tr = document.createElement('tr');
-      const prioClass = d.priority === 'CRITICAL' ? 'badge-danger' : (d.priority === 'HIGH' ? 'badge-warning' : 'badge-info');
       tr.innerHTML = `
         <th scope="row" class="font-mono"><strong>${d.id}</strong></th>
-        <td><span class="badge ${prioClass}">${d.priority}</span></td>
+        <td><span class="status-badge-${d.priority === 'CRITICAL' ? 'blocked' : 'open'}">${d.priority}</span></td>
         <td>${d.incidentLocation}</td>
         <td>${d.description}</td>
         <td class="font-mono text-cyan">${d.etaMinutes} min</td>
       `;
-      elements.historyTableBody.appendChild(tr);
+      el.historyTableBody.appendChild(tr);
     });
   }
 
   function getLocationsMap() {
     const map = {};
-    state.locations.forEach(loc => { map[loc.id] = loc; });
+    state.locations.forEach(l => { map[l.id] = l; });
     return map;
   }
 
   // ========================================================
-  // Navigation & UI Event Wiring
+  // UI Bindings & Event Wireup
   // ========================================================
 
-  function setupNavigation() {
-    elements.navButtons.forEach(btn => {
+  function bindNavigation() {
+    el.tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        elements.navButtons.forEach(b => {
+        el.tabButtons.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
         });
-        elements.tabPanels.forEach(p => p.classList.remove('active'));
+        el.tabPanels.forEach(p => p.classList.remove('active'));
 
         btn.classList.add('active');
         btn.setAttribute('aria-selected', 'true');
-        const targetId = btn.getAttribute('aria-controls');
-        const targetPanel = document.getElementById(targetId);
-        if (targetPanel) targetPanel.classList.add('active');
+        const target = document.getElementById(btn.getAttribute('aria-controls'));
+        if (target) target.classList.add('active');
       });
     });
   }
 
-  function setupEventListeners() {
-    // Route Finder Form
-    elements.routeForm.addEventListener('submit', (e) => {
+  function bindEvents() {
+    // Route Form
+    el.routeForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const from = elements.routeFrom.value;
-      const to = elements.routeTo.value;
-      const algo = elements.routeForm.elements['algorithm'].value;
+      const from = el.routeFrom.value;
+      const to = el.routeTo.value;
+      const algo = el.routeForm.elements['algorithm'].value;
       if (from === to) {
-        showToast('Start and Destination cannot be the same!', 'emergency');
+        toast('Origin and destination cannot be identical!', 'emergency');
         return;
       }
       calculateRoute(from, to, algo);
     });
 
+    // Swap Locations
+    el.swapLocationsBtn.addEventListener('click', () => {
+      const temp = el.routeFrom.value;
+      el.routeFrom.value = el.routeTo.value;
+      el.routeTo.value = temp;
+      if (el.routeFrom.value && el.routeTo.value) {
+        calculateRoute(el.routeFrom.value, el.routeTo.value);
+      }
+    });
+
     // Emergency Dispatch Form
-    elements.dispatchForm.addEventListener('submit', (e) => {
+    el.dispatchForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const loc = elements.dispatchLocation.value;
-      const desc = elements.dispatchDesc.value;
-      const prio = elements.dispatchForm.elements['priority'].value;
+      const loc = el.dispatchLocation.value;
+      const desc = el.dispatchDesc.value;
+      const prio = el.dispatchForm.elements['priority'].value;
       dispatchAmbulance(loc, desc, prio);
     });
 
-    // Refresh Live Data
-    elements.refreshBtn.addEventListener('click', () => {
-      checkConnectionAndLoadData();
-      showToast('Checked server status & refreshed data', 'info');
+    // Refresh Sync
+    el.refreshBtn.addEventListener('click', () => {
+      syncWithBackend();
+      toast('Refreshed status & synced topology', 'info');
     });
 
     // Reset Route
-    elements.resetRouteBtn.addEventListener('click', () => {
+    el.resetRouteBtn.addEventListener('click', () => {
       state.activeRoute = null;
       state.selectedOrigin = null;
       state.selectedDest = null;
-      elements.routeResultBox.classList.add('hidden');
-      elements.routeBanner.classList.add('hidden');
-      elements.activePathLayer.innerHTML = '';
-      elements.routeFrom.value = '';
-      elements.routeTo.value = '';
+      el.routeResultBox.classList.add('hidden');
+      el.routeHudBanner.classList.add('hidden');
+      el.activePathLayer.innerHTML = '';
+      el.routeFrom.value = '';
+      el.routeTo.value = '';
       renderMap();
     });
 
-    // Simulate Vehicle Button
-    elements.animateVehicleBtn.addEventListener('click', () => {
+    // Simulate Vehicle
+    el.animateAmbulanceBtn.addEventListener('click', () => {
       if (state.activeRoute && state.activeRoute.path) {
-        animateVehicleAlongPath(state.activeRoute.path);
+        simulateAmbulanceAlongPath(state.activeRoute.path);
       }
     });
 
-    // Search Locations
-    elements.locSearch.addEventListener('input', (e) => {
+    // Search input
+    el.locSearch.addEventListener('input', (e) => {
       renderLocationsTable(e.target.value);
     });
 
-    // Modal Close
-    elements.dialogCloseBtn.addEventListener('click', () => elements.roadModal.close());
-    elements.modalCancelBtn.addEventListener('click', () => elements.roadModal.close());
+    // Dialog Buttons
+    el.dialogCloseBtn.addEventListener('click', () => el.roadModal.close());
+    el.modalCancelBtn.addEventListener('click', () => el.roadModal.close());
 
-    // Modal Submit
-    elements.roadCloseForm.addEventListener('submit', (e) => {
+    // Dialog Submit
+    el.roadCloseForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const reason = elements.modalRoadReason.value || 'Reported blockage';
+      const reason = el.modalRoadReason.value || 'Obstacle reported';
       if (state.selectedRoadForModal) {
         closeRoad(state.selectedRoadForModal.id, reason);
       }
-      elements.roadModal.close();
+      el.roadModal.close();
     });
   }
 
-  function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    const icon = type === 'emergency' ? '🚨' : (type === 'success' ? '✅' : 'ℹ️');
-    toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
-    elements.toastContainer.appendChild(toast);
+  function toast(msg, type = 'info') {
+    const t = document.createElement('div');
+    t.className = `toast-item toast-${type}`;
+    t.textContent = msg;
+    el.toastContainer.appendChild(t);
     setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(8px)';
-      toast.style.transition = '0.25s ease';
-      setTimeout(() => toast.remove(), 250);
-    }, 3500);
+      t.style.opacity = '0';
+      t.style.transform = 'translateY(10px)';
+      t.style.transition = '0.2s ease';
+      setTimeout(() => t.remove(), 200);
+    }, 3200);
   }
 
-  // Run on DOM ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    init();
+    boot();
   }
 })();
