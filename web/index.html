@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d18">
+  <title>OffTrack | Sign in to Campus Response</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="login.css">
+</head>
+<body class="login-page">
+  <header class="login-header">
+    <a class="login-brand" href="index.html" aria-label="OffTrack sign in">
+      <span class="brand-mark" aria-hidden="true">O</span>
+      <span class="brand-name">OFFTRACK</span>
+    </a>
+    <span class="environment-badge"><span></span> CAMPUS RESPONSE DEMO</span>
+  </header>
+
+  <main class="login-layout">
+    <section class="welcome-panel" aria-labelledby="welcome-title">
+      <div class="eyebrow"><span class="pulse-dot"></span> CHITKARA UNIVERSITY</div>
+      <h1 id="welcome-title">A clearer route<br>when every minute matters.</h1>
+      <p class="welcome-copy">Campus emergency navigation for dispatch teams. Find named campus destinations, plan around road closures, and coordinate a response from one place.</p>
+      <div class="feature-list">
+        <div><span class="feature-icon">⌖</span><span><strong>Campus map</strong><small>Named blocks, hostels, halls and facilities</small></span></div>
+        <div><span class="feature-icon">↗</span><span><strong>Graph-based routes</strong><small>BFS and DFS demonstrations with road closures</small></span></div>
+        <div><span class="feature-icon">✚</span><span><strong>Emergency dispatch</strong><small>Route planning to the Neelam Hospital</small></span></div>
+      </div>
+      <div class="network-preview" aria-label="Sample network contains 25 places and 28 shared road links">
+        <div><strong>24</strong><span>PLACES</span></div>
+        <i></i>
+        <div><strong>28</strong><span>SHARED ROADS</span></div>
+        <i></i>
+        <div><strong>2</strong><span>ROUTE METHODS</span></div>
+      </div>
+    </section>
+
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="card-icon" aria-hidden="true">↗</div>
+      <p class="card-kicker">WELCOME TO OFFTRACK</p>
+      <h2 id="login-title">Sign in to continue</h2>
+      <p class="card-copy">Open the emergency navigation dashboard.</p>
+
+      <form id="login-form" novalidate>
+        <label for="login-email">Work or campus email</label>
+        <input id="login-email" name="email" type="email" autocomplete="username" placeholder="name@university.edu" required>
+
+        <label for="login-password">Password</label>
+        <div class="password-wrap">
+          <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" minlength="6" required>
+          <button type="button" id="toggle-password" aria-label="Show password">Show</button>
+        </div>
+
+        <label for="login-role">Demo role</label>
+        <select id="login-role" name="role">
+          <option value="Dispatcher">Emergency dispatcher</option>
+          <option value="Campus Admin">Campus administrator</option>
+        </select>
+
+        <p id="login-error" class="login-error" role="alert" aria-live="polite"></p>
+        <button class="sign-in-btn" type="submit">Continue to dashboard <span aria-hidden="true">→</span></button>
+      </form>
+
+      <p class="prototype-note"><strong>Prototype sign-in</strong><br>This student demo does not verify accounts. Use any valid email and a password of at least 6 characters. Credentials are not sent to a server.</p>
+    </section>
+  </main>
+
+  <footer class="login-footer"><span>OFFTRACK CAMPUS DEMO</span><span>Map pins and graph links are illustrative.</span></footer>
+  <script src="login.js"></script>
+</body>
+</html>
